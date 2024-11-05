@@ -22,6 +22,7 @@ class ProductCreate(APIView):
 
 
 class ProductList(ListAPIView):
+    permission_classes = [IsAuthenticated]
     serializer_class = ProductSerializer
     filter_backends = [SearchFilter]
     search_fields = ['name', 'description']
