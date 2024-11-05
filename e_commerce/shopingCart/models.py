@@ -18,7 +18,7 @@ class Cart(models.Model):
 class Address(models.Model):
     user= models.ForeignKey(User, on_delete=models.CASCADE)
     line=models.TextField()
-    pin_code= models.IntegerField(max_length=8)
+    pin_code= models.IntegerField()
     city = models.CharField(max_length=25)
     state = models.CharField(max_length=25)
     country = models.CharField(max_length=25)

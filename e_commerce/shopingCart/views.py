@@ -115,8 +115,8 @@ class PaymentAPI(APIView):
         serializer = self.serializer_class(data=request.data)
         response = {}
         if serializer.is_valid():
-            data_dict = serializer.data
-            stripe.api_key = 'STRIPE_SECRET_KEY'
+            data_dict = serializer.validated_data
+            stripe.api_key = settings.STRIPE_SECRET_KEY
             response = self.stripe_card_payment(data_dict=data_dict)
         else:
             response = {
@@ -136,51 +136,31 @@ class PaymentAPI(APIView):
                     "cvc": data_dict['cvc'],
                 },
             }
+            payment_method= stripe.PaymentMethod.create(**card_details)
             payment_intent = stripe.PaymentIntent.create(
-                amount=10000, 
+                amount=10000,   
                 currency='inr',
+                payment_method=payment_method.id,
+                confirm=True
             )
-            payment_intent_modified = stripe.PaymentIntent.modify(
-                payment_intent['id'],
-                payment_method=card_details['id'],
-            )
-            try:
-                payment_confirm = stripe.PaymentIntent.confirm(
-                    payment_intent['id']
-                )
-                payment_intent_modified = stripe.PaymentIntent.retrieve(payment_intent['id'])
-            except:
-                payment_intent_modified = stripe.PaymentIntent.retrieve(payment_intent['id'])
-                payment_confirm = {
-                    "stripe_payment_error": "Failed",
-                    "code": payment_intent_modified['last_payment_error']['code'],
-                    "message": payment_intent_modified['last_payment_error']['message'],
-                    'status': "Failed"
-                }
-            if payment_intent_modified and payment_intent_modified['status'] == 'succeeded':
-                response = {
+
+            if payment_intent.status == 'succeeded':
+                return {
                     'message': "Card Payment Success",
                     'status': status.HTTP_200_OK,
-                    "card_details": card_details,
-                    "payment_intent": payment_intent_modified,
-                    "payment_confirm": payment_confirm
+                    "payment_intent": payment_intent
                 }
             else:
-                response = {
+                return {
                     'message': "Card Payment Failed",
                     'status': status.HTTP_400_BAD_REQUEST,
-                    "card_details": card_details,
-                    "payment_intent": payment_intent_modified,
-                    "payment_confirm": payment_confirm
+                    "error": payment_intent.last_payment_error
                 }
-        except:
-            response = {
-                'error': "Your card number is incorrect",
-                'status': status.HTTP_400_BAD_REQUEST,
-                "payment_intent": {"id": "Null"},
-                "payment_confirm": {'status': "Failed"}
+        except Exception as e:
+            return {
+                'error': str(e),
+                'status': status.HTTP_400_BAD_REQUEST
             }
-        return response
 
 
 class updateCart(APIView):
@@ -285,7 +265,9 @@ class  AdminAnalyticsDashboard(APIView):
 
         last_month = datetime.now() - timedelta(days=30)
         last_month_sales = Order.objects.filter(status="Delivered", created_at__gte=last_month).count()
-        growth_rate = ((last_month_sales / total_sale) * 100) if total_sale else 0
+        growth_rate = 0
+        if total_sale != 0:
+            growth_rate = (last_month_sales/total_sale)*100
         
         return {
             "total_sales": total_sale,
@@ -372,7 +354,11 @@ class NotificationListView(APIView):
 
     def post(self, request):
         notification_id = request.data.get('notification_id')
-        notification = Notification.objects.get(id=notification_id, user=request.user)
-        notification.is_read = True
-        notification.save()
-        return Response({"message": "Notification marked as read"})
+        if notification_id: 
+            notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+            notification.is_read = True
+            notification.save()
+            return Response({"message": "Notification marked as read"})
+        else:
+            Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+            return Response({"message": "All notifications marked as read"})
